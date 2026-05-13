@@ -2,9 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Purpose
+
+This is an exploratory learning project focused on building LLM-embedded applications using locally hosted HuggingFace MLX models on Apple Silicon. The goal is to understand how to integrate local models into practical software — progressing from a simple CLI chat to RAG, web UIs, and structured output extraction. Each project is built alongside Claude Code as a hands-on tutorial.
+
+Projects build on each other: the inference loop and history patterns from `cli-chat` carry forward into every subsequent project.
+
 ## Repository structure
 
-This is an LLM learning project. Each subdirectory is an independent project with its own venv and dependencies:
+Each subdirectory is an independent project with its own venv and dependencies:
 
 ```
 hf/
@@ -15,7 +21,15 @@ hf/
 └── docs/            # Design specs and project notes
 ```
 
-See `docs/follow-along-projects.md` for descriptions of the planned future projects.
+Planned projects (see `docs/follow-along-projects.md` for full detail):
+
+| Project | What it teaches |
+|---|---|
+| `doc-qa/` | RAG — chunking, vector search (`faiss`/`chromadb`), grounding answers in a document |
+| `writing-assistant/` | Web layer — FastAPI backend, SSE streaming over HTTP, decoupled model server |
+| `data-extractor/` | Structured output — prompting for JSON, `pydantic` validation, retry on malformat |
+
+Recommended build order: `cli-chat` → `writing-assistant` → `doc-qa` → `data-extractor`
 
 ## cli-chat
 
