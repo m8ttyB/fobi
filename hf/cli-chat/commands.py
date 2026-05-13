@@ -28,7 +28,12 @@ def handle(line: str, history: dict, path: str) -> bool:
         _show_history(history)
 
     elif cmd == "/system":
-        prompt = args.strip().strip('"').strip("'")
+        args = args.strip()
+        if (args.startswith('"') and args.endswith('"')) or \
+                (args.startswith("'") and args.endswith("'")):
+            prompt = args[1:-1]
+        else:
+            prompt = args
         if not prompt:
             console.print("[red]Usage: /system \"your prompt here\"[/]")
         else:
