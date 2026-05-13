@@ -19,7 +19,7 @@ def main() -> None:
         h["system"] = config.DEFAULT_SYSTEM_PROMPT
 
     # Load model
-    with console.status("[bold green]Loading Gemma 4...[/]", spinner="dots"):
+    with console.status(f"[bold green]Loading model from {config.MODEL_PATH!r}...[/]", spinner="dots"):
         try:
             model, tokenizer = load_model(config.MODEL_PATH)
         except Exception as e:
@@ -55,10 +55,19 @@ def main() -> None:
             h["messages"].pop()
             console.print("[dim](generation cancelled)[/]")
             continue
+        except Exception as e:
+            # Any other generation failure: clean up and let user retry
+            print()
+            h["messages"].pop()
+            console.print(f"[red]Generation error: {e}[/]")
+            continue
 
         print()
         hist.append(h, "assistant", full_response)
-        hist.save(config.HISTORY_PATH, h)
+        try:
+            hist.save(config.HISTORY_PATH, h)
+        except OSError as e:
+            console.print(f"[yellow]Warning: could not save history: {e}[/]")
 
 
 if __name__ == "__main__":
