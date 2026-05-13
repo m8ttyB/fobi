@@ -27,9 +27,13 @@ Each subdirectory is an independent project with its own venv and dependencies:
 ```
 hf/
 ├── cli-chat/          # Project 1 (complete) — terminal chat REPL with MLX
+│   └── CLAUDE.md      # project-specific setup, commands, and architecture
 ├── doc-qa/            # Project 2 (future) — RAG over documents
+│   └── CLAUDE.md      # (to be created when project is built)
 ├── writing-assistant/ # Project 3 (future) — FastAPI + web UI
+│   └── CLAUDE.md      # (to be created when project is built)
 ├── data-extractor/    # Project 4 (future) — structured JSON extraction
+│   └── CLAUDE.md      # (to be created when project is built)
 └── docs/              # Design specs and project notes
 ```
 
