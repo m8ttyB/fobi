@@ -25,9 +25,10 @@ def test_stream_response_yields_tokens():
     chunks = [make_stream_chunk("Hi"), make_stream_chunk("!")]
 
     with patch("model.stream_generate", return_value=iter(chunks)):
-        tokens = list(model.stream_response(mock_model, mock_tokenizer, history))
+        results = list(model.stream_response(mock_model, mock_tokenizer, history))
 
-    assert tokens == ["Hi", "!"]
+    texts = [text for text, _ in results]
+    assert texts == ["Hi", "!"]
 
 
 def test_stream_response_includes_system_in_messages():

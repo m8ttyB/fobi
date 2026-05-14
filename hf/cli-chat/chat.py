@@ -5,6 +5,7 @@ import config
 import history as hist
 import commands
 from model import load_model, stream_response
+from metrics import MetricsCollector, print_stats
 
 console = Console()
 
@@ -44,16 +45,19 @@ def main() -> None:
         hist.append(h, "user", user_input)
         console.print("[dim]gemma >[/] ", end="")
 
+        collector = MetricsCollector(backend=config.METRICS_BACKEND)
+        collector.start()
         full_response = ""
         try:
-            for token in stream_response(model, tokenizer, h):
-                full_response += token
-                print(token, end="", flush=True)
+            for text, chunk in stream_response(model, tokenizer, h):
+                full_response += text
+                print(text, end="", flush=True)
+                collector.record(chunk)
         except KeyboardInterrupt:
             # Interrupted mid-generation: discard the incomplete user turn
             print()
             h["messages"].pop()
-            console.print("[dim](generation cancelled)[/]")
+            print_stats(collector.finish(cancelled=True), config.METRICS_BACKEND, console)
             continue
         except Exception as e:
             # Any other generation failure: clean up and let user retry
@@ -63,6 +67,7 @@ def main() -> None:
             continue
 
         print()
+        print_stats(collector.finish(), config.METRICS_BACKEND, console)
         hist.append(h, "assistant", full_response)
         try:
             hist.save(config.HISTORY_PATH, h)

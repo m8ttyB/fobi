@@ -8,8 +8,8 @@ def load_model(model_path: str):
     return load(model_path)
 
 
-def stream_response(model, tokenizer, history: dict) -> Iterator[str]:
-    """Yield string tokens one at a time for the next assistant turn."""
+def stream_response(model, tokenizer, history: dict) -> Iterator[tuple[str, object]]:
+    """Yield (token_text, raw_chunk) pairs for the next assistant turn."""
     messages = []
     if history.get("system"):
         messages.append({"role": "system", "content": history["system"]})
@@ -22,4 +22,4 @@ def stream_response(model, tokenizer, history: dict) -> Iterator[str]:
     )
 
     for chunk in stream_generate(model, tokenizer, prompt, max_tokens=1024):
-        yield chunk.text
+        yield chunk.text, chunk
