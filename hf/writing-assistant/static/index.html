@@ -1,173 +1,315 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Writing Assistant</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
-    h1 { font-size: 1.25rem; margin-bottom: 1.5rem; }
-    label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
-    textarea { width: 100%; box-sizing: border-box; padding: 0.5rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
-    select { padding: 0.4rem 0.6rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 0.45rem 1.1rem; font-size: 0.95rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button:disabled { background: #93c5fd; cursor: not-allowed; }
-    .controls { display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0; }
-    #output { margin-top: 1.5rem; padding: 1rem; background: #f8f8f8; border-radius: 4px; min-height: 80px; font-size: 0.95rem; white-space: pre-wrap; line-height: 1.6; }
-    #error { color: #dc2626; margin-top: 0.5rem; font-size: 0.875rem; }
-    #source { font-size: 0.8rem; color: #6b7280; margin-bottom: 0.25rem; display: none; }
-    #warning { font-size: 0.8rem; color: #d97706; margin-top: 0.25rem; display: none; }
-    #start-over { font-size: 0.8rem; color: #2563eb; cursor: pointer; background: none; border: none; padding: 0; text-decoration: underline; display: none; }
-  </style>
-</head>
-<body>
-  <h1>Writing Assistant</h1>
-
-  <label for="input">Your text or a URL</label>
-  <div id="source"></div>
-  <textarea id="input" rows="6" placeholder="Paste your text, or a URL starting with https://..."></textarea>
-  <div id="warning"></div>
-
-  <div class="controls">
-    <select id="mode">
-      <option value="rewrite">Rewrite</option>
-      <option value="summarize">Summarize</option>
-      <option value="make_formal">Make Formal</option>
-      <option value="make_casual">Make Casual</option>
-    </select>
-    <button id="run">Run</button>
-    <button id="start-over" type="button">Start over</button>
-  </div>
-
-  <div id="error"></div>
-  <div id="output"></div>
-
-  <script>
-    const runBtn = document.getElementById("run");
-    const inputEl = document.getElementById("input");
-    const output = document.getElementById("output");
-    const errorEl = document.getElementById("error");
-    const sourceEl = document.getElementById("source");
-    const warningEl = document.getElementById("warning");
-    const startOverBtn = document.getElementById("start-over");
-
-    // state: "idle" | "fetching" | "preview" | "generating"
-    let state = "idle";
-
-    function setState(s) {
-      state = s;
-      if (s === "idle") {
-        runBtn.textContent = "Run";
-        runBtn.disabled = false;
-        sourceEl.style.display = "none";
-        warningEl.style.display = "none";
-        startOverBtn.style.display = "none";
-      } else if (s === "fetching") {
-        runBtn.textContent = "Fetching…";
-        runBtn.disabled = true;
-      } else if (s === "preview") {
-        runBtn.textContent = "Run";
-        runBtn.disabled = false;
-        startOverBtn.style.display = "inline";
-      } else if (s === "generating") {
-        runBtn.disabled = true;
-      }
-    }
-
-    startOverBtn.addEventListener("click", () => {
-      inputEl.value = "";
-      output.textContent = "";
-      errorEl.textContent = "";
-      setState("idle");
-    });
-
-    const URL_RE = /^https?:\/\//i;
-
-    runBtn.addEventListener("click", async () => {
-      const value = inputEl.value.trim();
-      if (!value) return;
-
-      errorEl.textContent = "";
-
-      if (state === "idle" && URL_RE.test(value)) {
-        await doFetch(value);
-      } else {
-        await doGenerate(inputEl.value, document.getElementById("mode").value);
-      }
-    });
-
-    async function doFetch(url) {
-      setState("fetching");
-      try {
-        const r = await fetch("/fetch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-        });
-        const body = await r.json();
-        if (!r.ok) {
-          errorEl.textContent = body.detail || `Error: ${r.status}`;
-          setState("idle");
-          return;
-        }
-        inputEl.value = body.text;
-        sourceEl.textContent = `Source: ${url}`;
-        sourceEl.style.display = "block";
-        if (body.truncated) {
-          warningEl.textContent = `⚠ Truncated from ${body.original_length.toLocaleString()} to 20,000 characters`;
-          warningEl.style.display = "block";
-        }
-        setState("preview");
-      } catch (e) {
-        errorEl.textContent = "Network error — could not reach server.";
-        setState("idle");
-      }
-    }
-
-    async function doGenerate(text, mode) {
-      setState("generating");
-      output.textContent = "";
-      try {
-        const response = await fetch("/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, mode }),
-        });
-
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          errorEl.textContent = body.detail || `Error: ${response.status}`;
-          return;
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const messages = buffer.split("\n\n");
-          buffer = messages.pop();
-
-          for (const message of messages) {
-            if (message.startsWith("event: done")) break;
-            if (message.startsWith("event: error")) {
-              const data = message.split("\n").find(l => l.startsWith("data: "));
-              errorEl.textContent = data ? data.slice(6) : "Unknown error";
-              break;
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Writing Assistant</title>
+        <style>
+            /* Layout: centered, readable column */
+            body {
+                font-family: system-ui, sans-serif;
+                max-width: 720px;
+                margin: 40px auto;
+                padding: 0 20px;
             }
-            if (message.startsWith("data: ")) {
-              output.textContent += message.slice(6);
+            h1 {
+                font-size: 1.25rem;
+                margin-bottom: 1.5rem;
             }
-          }
-        }
-      } finally {
-        setState("idle");
-      }
-    }
-  </script>
-</body>
+            label {
+                display: block;
+                font-size: 0.875rem;
+                font-weight: 500;
+                margin-bottom: 0.25rem;
+            }
+
+            /* Inputs and controls */
+            textarea {
+                width: 100%;
+                box-sizing: border-box;
+                padding: 0.5rem;
+                font-size: 0.95rem;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                resize: vertical;
+            }
+            select {
+                padding: 0.4rem 0.6rem;
+                font-size: 0.95rem;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+            }
+            button {
+                padding: 0.45rem 1.1rem;
+                font-size: 0.95rem;
+                background: #2563eb;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            button:disabled {
+                background: #93c5fd;
+                cursor: not-allowed;
+            }
+            .controls {
+                display: flex;
+                gap: 0.75rem;
+                align-items: center;
+                margin: 0.75rem 0;
+            }
+
+            /* Output and status areas */
+            #output {
+                margin-top: 1.5rem;
+                padding: 1rem;
+                background: #f8f8f8;
+                border-radius: 4px;
+                min-height: 80px;
+                font-size: 0.95rem;
+                white-space: pre-wrap;
+                line-height: 1.6;
+            }
+            #error {
+                color: #dc2626;
+                margin-top: 0.5rem;
+                font-size: 0.875rem;
+            }
+            #source {
+                font-size: 0.8rem;
+                color: #6b7280;
+                margin-bottom: 0.25rem;
+                display: none;
+            }
+            #warning {
+                font-size: 0.8rem;
+                color: #d97706;
+                margin-top: 0.25rem;
+                display: none;
+            }
+            #start-over {
+                font-size: 0.8rem;
+                color: #2563eb;
+                cursor: pointer;
+                background: none;
+                border: none;
+                padding: 0;
+                text-decoration: underline;
+                display: none;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Writing Assistant</h1>
+
+        <!-- Text input area -->
+        <label for="input">Your text or a URL</label>
+        <div id="source"></div>
+        <textarea
+            id="input"
+            rows="6"
+            placeholder="Paste your text, or a URL starting with https://..."
+        ></textarea>
+        <div id="warning"></div>
+
+        <!-- Mode selector and action buttons -->
+        <div class="controls">
+            <select id="mode">
+                <option value="rewrite">Rewrite</option>
+                <option value="summarize">Summarize</option>
+                <option value="make_formal">Make Formal</option>
+                <option value="make_casual">Make Casual</option>
+            </select>
+            <button id="run">Run</button>
+            <button id="start-over" type="button">Start over</button>
+        </div>
+
+        <!-- Status and result display -->
+        <div id="error"></div>
+        <div id="output"></div>
+
+        <script>
+            // ------------------------------------------------------------------
+            // DOM references
+            // ------------------------------------------------------------------
+            const runBtn = document.getElementById("run");
+            const inputEl = document.getElementById("input");
+            const output = document.getElementById("output");
+            const errorEl = document.getElementById("error");
+            const sourceEl = document.getElementById("source");
+            const warningEl = document.getElementById("warning");
+            const startOverBtn = document.getElementById("start-over");
+
+            // ------------------------------------------------------------------
+            // Application state machine
+            // States: "idle" | "fetching" | "preview" | "generating"
+            // ------------------------------------------------------------------
+            let state = "idle";
+
+            /**
+             * Update the global state and sync the UI accordingly.
+             * Controls button text, disabled state, and visibility of helper elements.
+             */
+            function setState(s) {
+                state = s;
+                if (s === "idle") {
+                    // Ready for new input; hide metadata from previous runs
+                    runBtn.textContent = "Run";
+                    runBtn.disabled = false;
+                    sourceEl.style.display = "none";
+                    warningEl.style.display = "none";
+                    startOverBtn.style.display = "none";
+                } else if (s === "fetching") {
+                    // URL extraction in progress; prevent additional clicks
+                    runBtn.textContent = "Fetching…";
+                    runBtn.disabled = true;
+                } else if (s === "preview") {
+                    // Article text loaded from URL; allow user to review before generating
+                    runBtn.textContent = "Run";
+                    runBtn.disabled = false;
+                    startOverBtn.style.display = "inline";
+                } else if (s === "generating") {
+                    // LLM stream in progress
+                    runBtn.disabled = true;
+                }
+            }
+
+            // ------------------------------------------------------------------
+            // Event listeners
+            // ------------------------------------------------------------------
+
+            /** Reset the form to its initial empty state. */
+            startOverBtn.addEventListener("click", () => {
+                inputEl.value = "";
+                output.textContent = "";
+                errorEl.textContent = "";
+                setState("idle");
+            });
+
+            /** Quick regex to detect URLs so we can trigger the two-stage fetch flow. */
+            const URL_RE = /^https?:\/\//i;
+
+            /** Main click handler: decides whether to fetch a URL or generate text. */
+            runBtn.addEventListener("click", async () => {
+                const value = inputEl.value.trim();
+                if (!value) return; // ignore empty input
+
+                errorEl.textContent = "";
+
+                // Two-stage flow:
+                // 1. If the user pasted a URL while idle, fetch and preview the article first.
+                // 2. On the next click (or if input is plain text), call /generate.
+                if (state === "idle" && URL_RE.test(value)) {
+                    await doFetch(value);
+                } else {
+                    await doGenerate(
+                        inputEl.value,
+                        document.getElementById("mode").value,
+                    );
+                }
+            });
+
+            // ------------------------------------------------------------------
+            // Network helpers
+            // ------------------------------------------------------------------
+
+            /**
+             * POST the URL to /fetch, extract the article text, and populate the textarea.
+             * Shows a warning if the server truncated the content to the 20K character limit.
+             */
+            async function doFetch(url) {
+                setState("fetching");
+                try {
+                    const r = await fetch("/fetch", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ url }),
+                    });
+                    const body = await r.json();
+                    if (!r.ok) {
+                        errorEl.textContent =
+                            body.detail || `Error: ${r.status}`;
+                        setState("idle");
+                        return;
+                    }
+                    // Populate textarea with extracted article text
+                    inputEl.value = body.text;
+                    sourceEl.textContent = `Source: ${url}`;
+                    sourceEl.style.display = "block";
+                    if (body.truncated) {
+                        warningEl.textContent = `⚠ Truncated from ${body.original_length.toLocaleString()} to 20,000 characters`;
+                        warningEl.style.display = "block";
+                    }
+                    setState("preview");
+                } catch (e) {
+                    errorEl.textContent =
+                        "Network error — could not reach server.";
+                    setState("idle");
+                }
+            }
+
+            /**
+             * POST {text, mode} to /generate and stream the response back.
+             * Uses fetch + ReadableStream because EventSource only supports GET requests.
+             */
+            async function doGenerate(text, mode) {
+                setState("generating");
+                output.textContent = "";
+                try {
+                    const response = await fetch("/generate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ text, mode }),
+                    });
+
+                    if (!response.ok) {
+                        const body = await response.json().catch(() => ({}));
+                        errorEl.textContent =
+                            body.detail || `Error: ${response.status}`;
+                        return;
+                    }
+
+                    // Set up streaming reader and a buffer for partial SSE messages
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = "";
+
+                    // Read chunks until the stream is done
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        // Decode bytes to text, keeping the decoder open for multi-byte chars split across chunks
+                        buffer += decoder.decode(value, { stream: true });
+
+                        // SSE messages are separated by double newlines
+                        const messages = buffer.split("\n\n");
+                        // The last item may be an incomplete fragment; keep it for the next chunk
+                        buffer = messages.pop();
+
+                        // Process each complete SSE message
+                        for (const message of messages) {
+                            if (message.startsWith("event: done")) break;
+                            if (message.startsWith("event: error")) {
+                                const data = message
+                                    .split("\n")
+                                    .find((l) => l.startsWith("data: "));
+                                errorEl.textContent = data
+                                    ? data.slice(6)
+                                    : "Unknown error";
+                                break;
+                            }
+                            if (message.startsWith("data: ")) {
+                                // Strip the "data: " prefix and append the token to the output area
+                                output.textContent += message.slice(6);
+                            }
+                        }
+                    }
+                } finally {
+                    // Always return to idle so the user can run again
+                    setState("idle");
+                }
+            }
+        </script>
+    </body>
 </html>
