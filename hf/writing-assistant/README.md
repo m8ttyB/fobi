@@ -39,6 +39,34 @@ The model is downloaded automatically from HuggingFace on first run (~2.5 GB) an
 | `WA_HOST` | `127.0.0.1` | Server bind address |
 | `WA_PORT` | `8000` | Server port |
 
+## URL input
+
+The input field accepts either pasted text or a URL. If the value starts with `http://` or `https://`, clicking Run fetches the page, extracts the main article content, and shows it in an editable preview before generation runs.
+
+**Flow:**
+1. Paste a URL → click **Run** → article text appears in the textarea
+2. Review or edit the extracted text (and pick a mode)
+3. Click **Run** again → result streams as normal
+
+A **Start over** link appears during preview to clear everything and start fresh.
+
+If the extracted article exceeds 20,000 characters it is truncated and a warning is shown. The character budget corresponds to roughly 5,000 tokens — within the context window of the default model.
+
+**Supported:** HTML pages (articles, blog posts, documentation).  
+**Not supported (v1):** PDFs, JavaScript-rendered pages, paywalled content.
+
+### Fetch error messages
+
+| Error | Cause |
+|---|---|
+| Invalid URL | Input doesn't start with `http://` or `https://` |
+| Request timed out | Server waited 10s with no response |
+| Could not fetch the URL | HTTP 4xx/5xx from the target server |
+| Unsupported content type | URL points to a non-HTML resource (e.g. PDF) |
+| No article content found | Page loaded but trafilatura found no extractable article body |
+
+All errors appear inline below the input field; the URL is preserved so you can fix it and retry.
+
 ## Writing modes
 
 | Mode | What it does |
@@ -66,4 +94,4 @@ Tested and working: `mlx-community/gemma-3-4b-it-4bit` (Gemma 3 4B, 4-bit quanti
 make test
 ```
 
-9 tests covering `prompts.py` and the `POST /generate` endpoint (with mocked model). `static/index.html` is verified manually.
+~24 tests covering `prompts.py`, `fetcher.py`, `POST /fetch`, and `POST /generate` (all with mocked dependencies). `static/index.html` is verified manually.
