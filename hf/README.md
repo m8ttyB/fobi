@@ -17,7 +17,7 @@ Models are downloaded automatically from HuggingFace on first run and cached at 
 | Directory | Status | What it teaches |
 |---|---|---|
 | `cli-chat/` | Complete | Inference loop, chat history, streaming tokens, REPL design |
-| `writing-assistant/` | Planned | FastAPI backend, SSE streaming over HTTP, web UI |
+| `writing-assistant/` | Complete | FastAPI backend, SSE streaming over HTTP, web UI |
 | `doc-qa/` | Planned | RAG — chunking, vector search, grounding answers in a document |
 | `data-extractor/` | Planned | Structured JSON output, pydantic validation, retry on malformat |
 
