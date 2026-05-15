@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Writing Assistant</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+    h1 { font-size: 1.25rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
+    textarea { width: 100%; box-sizing: border-box; padding: 0.5rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+    select { padding: 0.4rem 0.6rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 0.45rem 1.1rem; font-size: 0.95rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #93c5fd; cursor: not-allowed; }
+    .controls { display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0; }
+    #output { margin-top: 1.5rem; padding: 1rem; background: #f8f8f8; border-radius: 4px; min-height: 80px; font-size: 0.95rem; white-space: pre-wrap; line-height: 1.6; }
+    #error { color: #dc2626; margin-top: 0.5rem; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <h1>Writing Assistant</h1>
+
+  <label for="input">Your text</label>
+  <textarea id="input" rows="6" placeholder="Paste your text here..."></textarea>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="rewrite">Rewrite</option>
+      <option value="summarize">Summarize</option>
+      <option value="make_formal">Make Formal</option>
+      <option value="make_casual">Make Casual</option>
+    </select>
+    <button id="run">Run</button>
+  </div>
+
+  <div id="error"></div>
+  <div id="output"></div>
+
+  <script>
+    const runBtn = document.getElementById("run");
+    const output = document.getElementById("output");
+    const errorEl = document.getElementById("error");
+
+    runBtn.addEventListener("click", async () => {
+      const text = document.getElementById("input").value.trim();
+      const mode = document.getElementById("mode").value;
+      if (!text) return;
+
+      runBtn.disabled = true;
+      output.textContent = "";
+      errorEl.textContent = "";
+
+      try {
+        const response = await fetch("/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, mode }),
+        });
+
+        if (!response.ok) {
+          errorEl.textContent = `Error: ${response.status} ${response.statusText}`;
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const messages = buffer.split("\n\n");
+          buffer = messages.pop(); // keep incomplete trailing chunk
+
+          for (const message of messages) {
+            if (message.startsWith("event: done")) break;
+            if (message.startsWith("event: error")) {
+              const data = message.split("\n").find(l => l.startsWith("data: "));
+              errorEl.textContent = data ? data.slice(6) : "Unknown error";
+              break;
+            }
+            if (message.startsWith("data: ")) {
+              output.textContent += message.slice(6);
+            }
+          }
+        }
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
