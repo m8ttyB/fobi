@@ -6,16 +6,25 @@ A web-based writing assistant that streams responses from a local MLX model. Pas
 
 ```bash
 cd hf/writing-assistant
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+make install
 ```
 
-## Running
+## Make targets
+
+| Target | Description |
+|---|---|
+| `make install` | Create `.venv` and install all dependencies |
+| `make run` | Start the dev server at `http://127.0.0.1:8000` |
+| `make test` | Run the test suite |
+| `make lint` | Check code with ruff |
+| `make format` | Auto-format code with ruff |
+
+`MODEL`, `HOST`, and `PORT` can be overridden at the command line:
 
 ```bash
-export WA_MODEL_PATH="mlx-community/gemma-3-4b-it-4bit"
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+make run                                        # defaults
+make run MODEL=mlx-community/gemma-3-4b-it-4bit PORT=9000
+make run MODEL=/path/to/local/mlx-model
 ```
 
 Then open `http://127.0.0.1:8000` in a browser.
@@ -54,8 +63,7 @@ Tested and working: `mlx-community/gemma-3-4b-it-4bit` (Gemma 3 4B, 4-bit quanti
 ## Tests
 
 ```bash
-source .venv/bin/activate
-pytest tests/ -v
+make test
 ```
 
 9 tests covering `prompts.py` and the `POST /generate` endpoint (with mocked model). `static/index.html` is verified manually.
