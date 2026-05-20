@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 doc_store/
+index.faiss
+metadata.json
