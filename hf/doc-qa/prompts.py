@@ -1,3 +1,10 @@
+"""Prompt construction for document-grounded Q&A.
+
+Retrieved chunks are formatted as a numbered context block and prepended to the
+user's question. The system prompt instructs the model to answer only from that
+context, which reduces hallucination on out-of-scope questions.
+"""
+
 SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions about a document. "
     "Base your answer only on the provided context. "
@@ -10,6 +17,17 @@ def build_messages(
     question: str,
     chunks: list[dict],
 ) -> list[dict]:
+    """Build a messages list ready for tokenizer.apply_chat_template.
+
+    Args:
+        history: Alternating user/assistant turns from previous exchanges.
+        question: The current user question.
+        chunks: Retrieved document chunks, each with at least a 'text' key.
+
+    Returns:
+        [system, ...history, user_with_context] — the user turn embeds retrieved
+        chunks as a context block above the question.
+    """
     context_parts = []
     for i, chunk in enumerate(chunks, 1):
         context_parts.append(f"--- Chunk {i} ---\n{chunk['text']}")

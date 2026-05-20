@@ -1,15 +1,15 @@
 import json
+import os
 import numpy as np
 from unittest.mock import patch, MagicMock
+
+from ingest import chunk_text, index_name_for
+import config
 
 
 # ---------------------------------------------------------------------------
 # chunk_text
 # ---------------------------------------------------------------------------
-
-from ingest import chunk_text
-import config
-
 
 def test_chunk_text_single_paragraph():
     text = "This is a single paragraph with some content."
@@ -19,8 +19,6 @@ def test_chunk_text_single_paragraph():
 
 
 def test_chunk_text_splits_on_double_newline():
-    # Each paragraph is ~500 chars — two together exceed MAX_CHUNK_CHARS (800)
-    # so they cannot all be merged into one chunk
     para = ("word " * 100).strip()
     text = para + "\n\n" + para + "\n\n" + para
     chunks = chunk_text(text)
@@ -28,7 +26,6 @@ def test_chunk_text_splits_on_double_newline():
 
 
 def test_chunk_text_merges_short_paragraphs():
-    # Each paragraph is short; they should be merged into fewer chunks
     parts = ["Short." for _ in range(5)]
     text = "\n\n".join(parts)
     chunks = chunk_text(text)
@@ -36,7 +33,7 @@ def test_chunk_text_merges_short_paragraphs():
 
 
 def test_chunk_text_respects_max_chunk_chars():
-    long_para = "word " * 300  # ~1500 chars, well over MAX_CHUNK_CHARS
+    long_para = "word " * 300
     text = long_para + "\n\n" + long_para
     chunks = chunk_text(text)
     for chunk in chunks:
@@ -44,14 +41,11 @@ def test_chunk_text_respects_max_chunk_chars():
 
 
 def test_chunk_text_adds_overlap():
-    # Two paragraphs that together exceed MAX_CHUNK_CHARS should produce
-    # chunks where the second chunk starts with content from the first
-    para_a = "Alpha " * 100   # ~600 chars
-    para_b = "Beta " * 100    # ~600 chars
+    para_a = "Alpha " * 100
+    para_b = "Beta " * 100
     text = para_a.strip() + "\n\n" + para_b.strip()
     chunks = chunk_text(text)
     if len(chunks) > 1:
-        # The second chunk should contain some overlap from the first
         assert "Alpha" in chunks[1]
 
 
@@ -77,8 +71,7 @@ def test_embed_chunks_returns_numpy_array():
 
 
 def test_embed_chunks_normalizes_vectors():
-    # Normalized vectors should have unit length (L2 norm ~= 1.0)
-    raw = np.array([[3.0, 4.0]])  # norm = 5.0
+    raw = np.array([[3.0, 4.0]])
     mock_model = MagicMock()
     mock_model.encode.return_value = raw
     with patch("ingest.SentenceTransformer", return_value=mock_model):
@@ -94,19 +87,14 @@ def test_embed_chunks_normalizes_vectors():
 
 def test_save_index_writes_files(tmp_path):
     embeddings = np.random.rand(3, 4).astype(np.float32)
-    # normalize
     embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
     chunks = ["chunk one", "chunk two", "chunk three"]
-    source = "test.pdf"
 
     index_path = str(tmp_path / "index.faiss")
     meta_path = str(tmp_path / "metadata.json")
 
-    with patch("ingest.config") as mock_cfg:
-        mock_cfg.INDEX_PATH = index_path
-        mock_cfg.METADATA_PATH = meta_path
-        from ingest import save_index
-        save_index(embeddings, chunks, source)
+    from ingest import save_index
+    save_index(embeddings, chunks, "test.pdf", index_path=index_path, metadata_path=meta_path)
 
     assert (tmp_path / "index.faiss").exists()
     assert (tmp_path / "metadata.json").exists()
@@ -120,14 +108,38 @@ def test_save_index_metadata_shape(tmp_path):
     index_path = str(tmp_path / "index.faiss")
     meta_path = str(tmp_path / "metadata.json")
 
-    with patch("ingest.config") as mock_cfg:
-        mock_cfg.INDEX_PATH = index_path
-        mock_cfg.METADATA_PATH = meta_path
-        from ingest import save_index
-        save_index(embeddings, chunks, "doc.pdf")
+    from ingest import save_index
+    save_index(embeddings, chunks, "doc.pdf", index_path=index_path, metadata_path=meta_path)
 
     metadata = json.loads((tmp_path / "metadata.json").read_text())
     assert len(metadata) == 2
     assert metadata[0]["text"] == "first chunk"
     assert metadata[0]["source"] == "doc.pdf"
     assert metadata[0]["chunk_index"] == 0
+
+
+# ---------------------------------------------------------------------------
+# index_name_for
+# ---------------------------------------------------------------------------
+
+def test_index_name_for_flat_file(tmp_path):
+    pdf = str(tmp_path / "report.pdf")
+    name = index_name_for(pdf, str(tmp_path))
+    assert name == "report"
+
+
+def test_index_name_for_nested_file(tmp_path):
+    subdir = tmp_path / "reports"
+    subdir.mkdir()
+    pdf = str(subdir / "q1.pdf")
+    name = index_name_for(pdf, str(tmp_path))
+    assert name == f"reports{os.sep.replace(os.sep, '__')}q1" or name == "reports__q1"
+
+
+def test_index_name_for_no_extension_collision(tmp_path):
+    pdf_a = str(tmp_path / "doc.pdf")
+    pdf_b = str(tmp_path / "subdir" / "doc.pdf")
+    os.makedirs(str(tmp_path / "subdir"))
+    name_a = index_name_for(pdf_a, str(tmp_path))
+    name_b = index_name_for(pdf_b, str(tmp_path))
+    assert name_a != name_b

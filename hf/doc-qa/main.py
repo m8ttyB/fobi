@@ -1,25 +1,43 @@
+"""CLI entry point for doc-qa.
+
+Four mutually exclusive commands:
+    --ingest FILE      Chunk, embed, and index a single PDF.
+    --ingest-dir DIR   Recursively ingest all PDFs in a directory.
+    --chat             Start an interactive Q&A REPL against all indexed documents.
+    --reset            Delete the entire index store (with confirmation).
+"""
+
 import argparse
 import os
+import shutil
 import sys
 
 import config
-from ingest import chunk_text, embed_chunks, save_index
+from ingest import chunk_text, embed_chunks, save_index, index_name_for, ingest_directory
 from model import load_model, stream_response
 from prompts import build_messages
-from retriever import load_index, retrieve
+from retriever import load_all_indexes, retrieve_multi
 from sentence_transformers import SentenceTransformer
 
 
 def cmd_ingest(path: str) -> None:
+    """Ingest a single PDF into the document store.
+
+    Prompts for confirmation before overwriting an existing index for the same file.
+    """
     if not os.path.exists(path):
         print(f"Error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
 
-    if os.path.exists(config.INDEX_PATH):
+    os.makedirs(config.STORE_DIR, exist_ok=True)
+    stem = index_name_for(path, os.path.dirname(os.path.abspath(path)))
+    index_path = os.path.join(config.STORE_DIR, f"{stem}.faiss")
+    metadata_path = os.path.join(config.STORE_DIR, f"{stem}.json")
+
+    if os.path.exists(index_path):
         print(
-            f"Warning: an existing index was found at '{config.INDEX_PATH}'. "
-            "Ingesting will overwrite it — the previous document will no longer be searchable. "
-            "Run --reset first if you want to start clean."
+            f"Warning: '{os.path.basename(path)}' is already indexed. "
+            "Ingesting will overwrite it."
         )
         answer = input("Continue? [y/N] ").strip().lower()
         if answer != "y":
@@ -27,7 +45,7 @@ def cmd_ingest(path: str) -> None:
             return
 
     print(f"Loading {path}...")
-    from pypdf import PdfReader
+    from ingest import PdfReader
     reader = PdfReader(path)
     text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
 
@@ -42,34 +60,51 @@ def cmd_ingest(path: str) -> None:
     print(f"Embedding chunks with '{config.EMBED_MODEL}'...")
     embeddings = embed_chunks(chunks, config.EMBED_MODEL)
 
-    print(f"Saving index to '{config.INDEX_PATH}'...")
-    save_index(embeddings, chunks, source=path)
+    print(f"Saving index to '{config.STORE_DIR}'...")
+    save_index(embeddings, chunks, source=path, index_path=index_path, metadata_path=metadata_path)
     print("Done. Run --chat to ask questions.")
 
 
+def cmd_ingest_dir(dir_path: str) -> None:
+    """Recursively ingest all PDFs in dir_path into the document store."""
+    if not os.path.isdir(dir_path):
+        print(f"Error: directory not found: {dir_path}", file=sys.stderr)
+        sys.exit(1)
+    os.makedirs(config.STORE_DIR, exist_ok=True)
+    ingest_directory(dir_path, config.STORE_DIR, config.EMBED_MODEL)
+    print("Run --chat to ask questions.")
+
+
 def cmd_reset() -> None:
-    answer = input("Delete index and metadata? [y/N] ").strip().lower()
+    """Delete the entire document store after user confirmation."""
+    answer = input(f"Delete all indexes in '{config.STORE_DIR}'? [y/N] ").strip().lower()
     if answer != "y":
         print("Cancelled.")
         return
-    removed = []
-    for path in (config.INDEX_PATH, config.METADATA_PATH):
-        if os.path.exists(path):
-            os.remove(path)
-            removed.append(path)
-    if removed:
-        print(f"Removed: {', '.join(removed)}")
+    if os.path.isdir(config.STORE_DIR):
+        shutil.rmtree(config.STORE_DIR)
+        print(f"Removed '{config.STORE_DIR}'.")
     else:
-        print("Nothing to remove — no index found.")
+        print("Nothing to remove — no index store found.")
 
 
 def cmd_chat() -> None:
+    """Start a REPL for asking questions against all indexed documents.
+
+    Retrieves the top-k most relevant chunks across all indexes, builds a
+    grounded prompt, and streams the model's response token by token.
+    After each answer, prints the source filenames of the retrieved chunks.
+    History accumulates across turns; oldest turns are trimmed when the
+    context budget fills so retrieval quality is never sacrificed for history.
+    """
     try:
-        index, metadata = load_index()
+        indexes = load_all_indexes(config.STORE_DIR)
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    doc_count = len(indexes)
+    chunk_count = sum(idx.ntotal for idx, _ in indexes)
     print(f"Loading embedding model '{config.EMBED_MODEL}'...")
     embed_model = SentenceTransformer(config.EMBED_MODEL)
 
@@ -77,7 +112,8 @@ def cmd_chat() -> None:
     model, tokenizer = load_model(config.MODEL_PATH)
 
     history: list[dict] = []
-    print(f"\nIndex loaded ({index.ntotal} chunks). Type /exit to quit, /clear to reset history.\n")
+    print(f"\n{doc_count} document(s) indexed ({chunk_count} chunks). "
+          "Type /exit to quit, /clear to reset history.\n")
 
     while True:
         try:
@@ -95,7 +131,7 @@ def cmd_chat() -> None:
             print("History cleared.")
             continue
 
-        chunks = retrieve(question, embed_model, index, metadata, top_k=config.TOP_K)
+        chunks = retrieve_multi(question, embed_model, indexes, top_k=config.TOP_K)
         messages = build_messages(history, question, chunks)
 
         response = ""
@@ -108,28 +144,37 @@ def cmd_chat() -> None:
 
         print()
 
+        # Show which documents contributed to this answer
+        sources = list(dict.fromkeys(
+            os.path.basename(c["source"]) for c in chunks
+        ))
+        print(f"Sources: {', '.join(sources)}\n")
+
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": response})
 
-        # trim history to MAX_HISTORY_TURNS pairs
         max_entries = config.MAX_HISTORY_TURNS * 2
         if len(history) > max_entries:
             history = history[-max_entries:]
 
 
 def main() -> None:
+    """Parse CLI arguments and dispatch to the appropriate command."""
     parser = argparse.ArgumentParser(
-        description="doc-qa: answer questions about a document using RAG"
+        description="doc-qa: answer questions about documents using RAG"
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--ingest", metavar="FILE", help="ingest a PDF document")
+    group.add_argument("--ingest", metavar="FILE", help="ingest a single PDF document")
+    group.add_argument("--ingest-dir", metavar="DIR", help="ingest all PDFs in a directory (recursive)")
     group.add_argument("--chat", action="store_true", help="start a Q&A session")
-    group.add_argument("--reset", action="store_true", help="delete the index and metadata")
+    group.add_argument("--reset", action="store_true", help="delete all indexes")
 
     args = parser.parse_args()
 
     if args.ingest:
         cmd_ingest(args.ingest)
+    elif args.ingest_dir:
+        cmd_ingest_dir(args.ingest_dir)
     elif args.chat:
         cmd_chat()
     elif args.reset:
