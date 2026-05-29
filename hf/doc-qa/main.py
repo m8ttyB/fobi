@@ -5,6 +5,11 @@ Four mutually exclusive commands:
     --ingest-dir DIR   Recursively ingest all PDFs in a directory.
     --chat             Start an interactive Q&A REPL against all indexed documents.
     --reset            Delete the entire index store (with confirmation).
+
+Readline is imported at startup when available (macOS, Linux) to enable
+up/down-arrow history navigation, left/right cursor movement, and Ctrl+R
+reverse search within the chat REPL. On Windows, where readline is absent,
+the import is silently skipped and plain input() is used instead.
 """
 
 import argparse
@@ -13,6 +18,13 @@ import shutil
 import sys
 
 import config
+
+try:
+    import readline
+    readline.set_history_length(config.MAX_HISTORY_TURNS * 2)
+except ImportError:
+    pass  # Windows — plain input() used, no history navigation
+from contextualizer import contextualize_query
 from ingest import chunk_text, embed_chunks, save_index, index_name_for, ingest_directory
 from model import load_model, stream_response
 from prompts import build_messages
@@ -91,9 +103,17 @@ def cmd_reset() -> None:
 def cmd_chat() -> None:
     """Start a REPL for asking questions against all indexed documents.
 
+    Before each retrieval, the current question is rewritten into a standalone
+    query using recent conversation history (query contextualization). This
+    ensures follow-up questions like "Tell me more" resolve correctly against
+    the document index. The rewritten query is used only for retrieval — the
+    original question is preserved for history and the generation prompt.
+
     Retrieves the top-k most relevant chunks across all indexes, builds a
     grounded prompt, and streams the model's response token by token.
     After each answer, prints the source filenames of the retrieved chunks.
+    If no chunks pass the MIN_SCORE threshold, the model is not called and
+    the user is prompted to rephrase rather than receiving a hallucinated answer.
     History accumulates across turns; oldest turns are trimmed when the
     context budget fills so retrieval quality is never sacrificed for history.
     """
@@ -131,7 +151,14 @@ def cmd_chat() -> None:
             print("History cleared.")
             continue
 
-        chunks = retrieve_multi(question, embed_model, indexes, top_k=config.TOP_K)
+        retrieval_query = contextualize_query(question, history, model, tokenizer)
+        chunks = retrieve_multi(retrieval_query, embed_model, indexes, top_k=config.TOP_K, min_score=config.MIN_SCORE)
+
+        if not chunks:
+            print("No relevant content found for that question. "
+                  "Try rephrasing, or check that the relevant document has been ingested.\n")
+            continue
+
         messages = build_messages(history, question, chunks)
 
         response = ""

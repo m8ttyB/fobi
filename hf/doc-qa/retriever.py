@@ -64,11 +64,14 @@ def retrieve(
     index: faiss.Index,
     metadata: list[dict],
     top_k: int,
+    min_score: float = 0.0,
 ) -> list[dict]:
     """Search a single index and return the top-k chunks by cosine similarity.
 
     Each returned dict is a copy of the metadata entry with an added 'score' key.
-    top_k is capped at the number of vectors in the index.
+    top_k is capped at the number of vectors in the index. Chunks with a cosine
+    similarity score below min_score are excluded. Defaults to 0.0 (no filtering)
+    for backward compatibility — pass config.MIN_SCORE for production use.
     """
     query_vec = embed_model.encode([query], convert_to_numpy=True).astype(np.float32)
     query_vec /= np.linalg.norm(query_vec, axis=1, keepdims=True)
@@ -83,7 +86,8 @@ def retrieve(
         entry = dict(metadata[idx])
         entry["score"] = float(score)
         results.append(entry)
-    return results
+
+    return [r for r in results if r["score"] >= min_score]
 
 
 def retrieve_multi(
@@ -91,12 +95,16 @@ def retrieve_multi(
     embed_model: SentenceTransformer,
     indexes: list[tuple[faiss.Index, list[dict]]],
     top_k: int,
+    min_score: float = 0.0,
 ) -> list[dict]:
     """Search all indexes, merge results, and return the global top-k by cosine score.
 
     Scores are directly comparable across indexes because all embeddings are
     L2-normalized — inner product equals cosine similarity regardless of which
-    document a chunk came from.
+    document a chunk came from. Threshold filtering is applied before the top_k
+    cap so that a query with no strong matches returns an empty list rather than
+    forcing k low-quality chunks into the prompt. Defaults to 0.0 (no filtering)
+    for backward compatibility — pass config.MIN_SCORE for production use.
     """
     query_vec = embed_model.encode([query], convert_to_numpy=True).astype(np.float32)
     query_vec /= np.linalg.norm(query_vec, axis=1, keepdims=True)
@@ -112,5 +120,6 @@ def retrieve_multi(
             entry["score"] = float(score)
             all_results.append(entry)
 
+    all_results = [r for r in all_results if r["score"] >= min_score]
     all_results.sort(key=lambda r: r["score"], reverse=True)
     return all_results[:top_k]

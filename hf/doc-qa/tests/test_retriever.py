@@ -150,3 +150,56 @@ def test_retrieve_multi_can_pull_from_multiple_sources(tmp_path):
     results = retrieve_multi("question", _mock_embed(query_vec), [(idx_a, meta_a), (idx_b, meta_b)], top_k=6)
     sources = {r["source"] for r in results}
     assert len(sources) == 2
+
+
+# ---------------------------------------------------------------------------
+# min_score thresholding
+# ---------------------------------------------------------------------------
+
+def test_retrieve_min_score_filters_low_scores(tmp_path):
+    index, metadata, _ = _write_index(tmp_path, "doc", dim=8, n=5, source="doc.pdf")
+    query_vec = np.random.rand(1, 8).astype(np.float32)
+    query_vec /= np.linalg.norm(query_vec)
+    from retriever import retrieve
+    # A threshold of 1.0 is only satisfied by an exact match — should return nothing
+    results = retrieve("question", _mock_embed(query_vec), index, metadata, top_k=5, min_score=1.0)
+    assert results == []
+
+
+def test_retrieve_min_score_zero_returns_all(tmp_path):
+    index, metadata, _ = _write_index(tmp_path, "doc", dim=8, n=4, source="doc.pdf")
+    query_vec = np.random.rand(1, 8).astype(np.float32)
+    query_vec /= np.linalg.norm(query_vec)
+    from retriever import retrieve
+    results = retrieve("question", _mock_embed(query_vec), index, metadata, top_k=4, min_score=0.0)
+    assert len(results) == 4
+
+
+def test_retrieve_multi_min_score_filters_low_scores(tmp_path):
+    idx_a, meta_a, _ = _write_index(tmp_path, "a", dim=8, n=3, source="a.pdf")
+    idx_b, meta_b, _ = _write_index(tmp_path, "b", dim=8, n=3, source="b.pdf")
+    query_vec = np.random.rand(1, 8).astype(np.float32)
+    query_vec /= np.linalg.norm(query_vec)
+    from retriever import retrieve_multi
+    results = retrieve_multi("question", _mock_embed(query_vec), [(idx_a, meta_a), (idx_b, meta_b)], top_k=6, min_score=1.0)
+    assert results == []
+
+
+def test_retrieve_multi_min_score_applied_before_top_k(tmp_path):
+    # With min_score=1.0 (impossible threshold), top_k=4 should return 0, not 4
+    index, metadata, _ = _write_index(tmp_path, "doc", dim=8, n=6, source="doc.pdf")
+    query_vec = np.random.rand(1, 8).astype(np.float32)
+    query_vec /= np.linalg.norm(query_vec)
+    from retriever import retrieve_multi
+    results = retrieve_multi("question", _mock_embed(query_vec), [(index, metadata)], top_k=4, min_score=1.0)
+    assert len(results) == 0
+
+
+def test_retrieve_multi_min_score_zero_default_unchanged(tmp_path):
+    idx_a, meta_a, _ = _write_index(tmp_path, "a", dim=8, n=3, source="a.pdf")
+    query_vec = np.random.rand(1, 8).astype(np.float32)
+    query_vec /= np.linalg.norm(query_vec)
+    from retriever import retrieve_multi
+    # Default min_score=0.0 should not filter anything
+    results = retrieve_multi("question", _mock_embed(query_vec), [(idx_a, meta_a)], top_k=3)
+    assert len(results) == 3
