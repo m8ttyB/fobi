@@ -1,0 +1,6 @@
+mlx-lm
+pypdf
+pydantic
+rich
+pytest
+ruff

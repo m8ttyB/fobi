@@ -19,7 +19,7 @@ Models are downloaded automatically from HuggingFace on first run and cached at 
 | `cli-chat/` | Complete | Inference loop, chat history, streaming tokens, REPL design |
 | `writing-assistant/` | Complete | FastAPI backend, SSE streaming over HTTP, web UI |
 | `doc-qa/` | Complete | RAG — chunking, vector search, grounding answers in a document |
-| `data-extractor/` | Planned | Structured JSON output, pydantic validation, retry on malformat |
+| `data-extractor/` | Complete | Structured JSON output, pydantic validation, retry on malformat |
 
 **Recommended build order:** `cli-chat` → `writing-assistant` → `doc-qa` → `data-extractor`
 
