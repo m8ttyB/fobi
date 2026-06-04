@@ -2,6 +2,13 @@
 
 A CLI tool for extracting structured entities from unstructured text. Give it a plain text file or PDF and it extracts title, topic, people, places, dates, and a summary — validated against a Pydantic schema and displayed as a formatted table.
 
+Two extraction strategies are available for direct comparison:
+
+| Strategy | How it works | Best for |
+|---|---|---|
+| `truncate` (V1, default) | Caps input at `MAX_CHARS`, single model call | Short documents, fast results |
+| `chunked` (V2) | Splits full document, extracts per chunk, model-based merge | Long documents, maximum coverage |
+
 ## Setup
 
 ```bash
@@ -12,8 +19,15 @@ make install
 ## Quick start
 
 ```bash
+# V1 — truncate (default)
 make run FILE=path/to/document.txt
-make run FILE=path/to/document.pdf
+
+# V2 — chunked (full document)
+make run FILE=path/to/document.pdf STRATEGY=chunked
+
+# Compare both on the same document
+make run FILE=doc.pdf STRATEGY=truncate
+make run FILE=doc.pdf STRATEGY=chunked
 ```
 
 ## Make targets
@@ -21,15 +35,22 @@ make run FILE=path/to/document.pdf
 | Target | Description |
 |---|---|
 | `make install` | Create `.venv` and install all dependencies |
-| `make run FILE=...` | Run extraction on a file |
+| `make run FILE=...` | Run extraction (default strategy: truncate) |
+| `make run FILE=... STRATEGY=chunked` | Run chunked extraction |
 | `make test` | Run the test suite |
 | `make lint` | Check code with ruff |
 | `make format` | Auto-format code with ruff |
 
-`MODEL` can be overridden:
+`MODEL` and `STRATEGY` can be overridden:
 
 ```bash
-make run FILE=doc.txt MODEL=mlx-community/gemma-3-4b-it-4bit
+make run FILE=doc.txt MODEL=mlx-community/gemma-3-4b-it-4bit STRATEGY=chunked
+```
+
+## CLI flags
+
+```
+python main.py FILE [--model MODEL_PATH] [--strategy {truncate,chunked}]
 ```
 
 ## Environment variables
@@ -37,8 +58,10 @@ make run FILE=doc.txt MODEL=mlx-community/gemma-3-4b-it-4bit
 | Variable | Default | Description |
 |---|---|---|
 | `EXTRACTOR_MODEL_PATH` | `mlx-community/gemma-3-4b-it-4bit` | HuggingFace repo ID or local MLX model directory |
-| `EXTRACTOR_MAX_CHARS` | `20000` | Maximum characters of document text sent to the model |
+| `EXTRACTOR_MAX_CHARS` | `20000` | Maximum characters for truncate strategy |
 | `EXTRACTOR_MAX_RETRIES` | `3` | Number of extraction attempts before giving up |
+| `EXTRACTOR_CHUNK_CHARS` | `4000` | Target chunk size for chunked strategy |
+| `EXTRACTOR_OVERLAP_CHARS` | `400` | Overlap between consecutive chunks |
 
 ## Output schema
 
@@ -57,32 +80,39 @@ Dates are preserved as written in the source text ("mid-1930s", "early July") ra
 
 ## How it works
 
+### V1 — truncate
+
 1. Load the file — `.txt` read directly, `.pdf` extracted with `pypdf`
 2. Truncate to `MAX_CHARS` with a visible warning if the document exceeds that limit
 3. Build a prompt with the full JSON schema and strict formatting rules
 4. Call the local model and parse the response
-5. Validate with Pydantic — on failure, append the error to the conversation and retry
+5. Validate with Pydantic — on failure, append the error and retry
 6. Display the result as a formatted table with `rich`
+
+### V2 — chunked
+
+1. Load the full file with no truncation
+2. Split into overlapping chunks (~4,000 chars with ~400 char overlap, snapping to paragraph boundaries)
+3. Run the same extraction prompt on each chunk independently
+4. Collect all partial `ExtractedDocument` objects
+5. Pass them to a model-based merge pass — the model deduplicates people, places, and dates by identity (not just exact string match), then writes a unified topic and summary
+6. Validate the merged result with Pydantic and display
 
 ## Retry behaviour
 
 Models frequently wrap JSON in markdown code fences or add explanatory preamble. The extractor strips fences automatically before parsing. If the response still can't be parsed or fails schema validation, the error is appended to the conversation and the model is asked to correct it. After `MAX_RETRIES` failures the tool exits with a non-zero code.
 
-## Truncation
+This applies to both per-chunk extraction and the merge pass.
 
-Documents longer than `MAX_CHARS` (default 20,000 characters) are truncated before sending to the model. A warning is printed showing the original and truncated length:
+## Chunking
 
-```
-Warning: Document truncated: 87,432 → 20,000 chars. Results cover only the first portion.
-```
-
-Raise `EXTRACTOR_MAX_CHARS` to process more of long documents (at the cost of longer generation time and increased risk of hitting the model's context limit).
+Chunk boundaries snap to the nearest paragraph break (`\n\n`) within a tolerance window to avoid splitting mid-sentence. Each chunk overlaps with the previous by `OVERLAP_CHARS` characters so entities straddling a boundary appear in full context in at least one chunk.
 
 ## Known limitations
 
-**Truncation is lossy** — entities mentioned only in the later portion of a long document will not be extracted. V2 will add a chunked extraction mode that processes the full document in segments and merges results.
+**Small models may hallucinate** — a 4B 4-bit model has limited instruction-following reliability, particularly in the merge pass where it must reason about identity across multiple partial results. Larger models (12B, 27B) from `mlx-community` will produce more accurate extractions and deduplication. Schema errors are caught by Pydantic; factual errors are not.
 
-**Small models may miss entities** — a 4B 4-bit model has limited instruction-following reliability. Larger models (12B, 27B) from `mlx-community` will produce more complete and accurate extractions.
+**Chunked strategy is slower** — each chunk requires a separate model call, plus one more for the merge. A 20,000-char document with 4,000-char chunks produces ~6 extraction calls + 1 merge call.
 
 ## Tests
 
@@ -90,7 +120,7 @@ Raise `EXTRACTOR_MAX_CHARS` to process more of long documents (at the cost of lo
 make test
 ```
 
-40 tests covering `schema.py`, `extractor.py`, and `main.py`. All run without a real model — dependencies are mocked.
+66 tests covering `schema.py`, `extractor.py`, `chunker.py`, `merger.py`, and `main.py`. All run without a real model — dependencies are mocked.
 
 ## Model compatibility
 

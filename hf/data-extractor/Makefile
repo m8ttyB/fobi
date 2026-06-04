@@ -6,7 +6,8 @@ PIP = $(VENV)/bin/pip
 PYTEST = $(VENV)/bin/pytest
 RUFF = $(VENV)/bin/ruff
 
-MODEL ?= $(shell echo $${EXTRACTOR_MODEL_PATH:-mlx-community/gemma-3-4b-it-4bit})
+MODEL    ?= $(shell echo $${EXTRACTOR_MODEL_PATH:-mlx-community/gemma-3-4b-it-4bit})
+STRATEGY ?= truncate
 
 install:
 	python3 -m venv $(VENV)
@@ -14,7 +15,7 @@ install:
 	$(PIP) install -r requirements.txt
 
 run:
-	$(PYTHON) main.py $(FILE) --model $(MODEL)
+	$(PYTHON) main.py $(FILE) --model $(MODEL) --strategy $(STRATEGY)
 
 test:
 	$(PYTEST) tests/ -v

@@ -1,11 +1,18 @@
 """CLI entry point for data-extractor.
 
 Usage:
-    python main.py FILE [--model MODEL_PATH]
+    python main.py FILE [--model MODEL_PATH] [--strategy {truncate,chunked}]
 
-Reads a .txt or .pdf file, extracts structured entities using the local model,
-and displays the result as a formatted table. Truncates input to MAX_CHARS with
-a visible warning if the document exceeds that limit.
+Two extraction strategies are available:
+
+  truncate (default, V1)
+    Caps input at MAX_CHARS characters and runs a single extraction pass.
+    Fast and simple; lossy on long documents.
+
+  chunked (V2)
+    Splits the full document into overlapping chunks, extracts from each,
+    then runs a model-based merge pass to deduplicate and combine results.
+    Covers the full document; requires additional model calls.
 """
 
 import argparse
@@ -18,7 +25,9 @@ from rich.table import Table
 from rich import box
 
 import config
+from chunker import chunk_document
 from extractor import ExtractionError, extract
+from merger import merge
 from model import load_model
 from schema import ExtractedDocument
 
@@ -46,7 +55,13 @@ def truncate(text: str, max_chars: int = config.MAX_CHARS) -> tuple[str, bool]:
     return text[:max_chars], True
 
 
-def display(result: ExtractedDocument, truncated: bool, original_length: int) -> None:
+def display(
+    result: ExtractedDocument,
+    truncated: bool = False,
+    original_length: int = 0,
+    strategy: str = "truncate",
+    chunk_count: int = 0,
+) -> None:
     """Render the extracted document to the terminal using rich."""
     if truncated:
         console.print(
@@ -54,6 +69,13 @@ def display(result: ExtractedDocument, truncated: bool, original_length: int) ->
             f"{original_length:,} → {config.MAX_CHARS:,} chars. "
             "Results cover only the first portion.\n"
         )
+
+    if strategy == "chunked":
+        console.print(
+            f"[dim]Strategy: chunked ({chunk_count} chunk{'s' if chunk_count != 1 else ''})[/dim]\n"
+        )
+    else:
+        console.print("[dim]Strategy: truncate[/dim]\n")
 
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
     table.add_column("Field", style="bold cyan", min_width=10)
@@ -102,8 +124,38 @@ def display(result: ExtractedDocument, truncated: bool, original_length: int) ->
     console.print(table)
 
 
+def cmd_truncate(text: str, model, tokenizer) -> ExtractedDocument:
+    """V1: truncate to MAX_CHARS and run a single extraction pass."""
+    original_length = len(text)
+    text, truncated = truncate(text)
+
+    console.print("Extracting structured entities...\n")
+    result = extract(text, model, tokenizer)
+    display(result, truncated=truncated, original_length=original_length, strategy="truncate")
+    return result
+
+
+def cmd_chunked(text: str, model, tokenizer) -> ExtractedDocument:
+    """V2: split into overlapping chunks, extract from each, then merge."""
+    chunks = chunk_document(text)
+    n = len(chunks)
+    console.print(f"Document split into [cyan]{n}[/cyan] chunk{'s' if n != 1 else ''}.\n")
+
+    partials = []
+    for i, chunk in enumerate(chunks, 1):
+        console.print(f"Extracting chunk [cyan]{i}/{n}[/cyan]...")
+        partial = extract(chunk, model, tokenizer)
+        partials.append(partial)
+
+    if n > 1:
+        console.print("\nMerging and deduplicating...\n")
+    result = merge(partials, model, tokenizer)
+    display(result, strategy="chunked", chunk_count=n)
+    return result
+
+
 def main() -> None:
-    """Parse CLI arguments and run extraction."""
+    """Parse CLI arguments and dispatch to the appropriate extraction strategy."""
     parser = argparse.ArgumentParser(
         description="data-extractor: extract structured entities from a document"
     )
@@ -113,6 +165,12 @@ def main() -> None:
         default=config.MODEL_PATH,
         metavar="MODEL_PATH",
         help=f"HuggingFace repo ID or local MLX model path (default: {config.MODEL_PATH})",
+    )
+    parser.add_argument(
+        "--strategy",
+        choices=["truncate", "chunked"],
+        default="truncate",
+        help="extraction strategy: truncate (V1, default) or chunked (V2)",
     )
     args = parser.parse_args()
 
@@ -129,24 +187,22 @@ def main() -> None:
         err_console.print(f"[bold red]Error reading file:[/bold red] {e}")
         sys.exit(1)
 
-    original_length = len(text)
-    text, truncated = truncate(text)
-
     if not text.strip():
         err_console.print("[bold red]Error:[/bold red] no text could be extracted from the file.")
         sys.exit(1)
 
     console.print(f"Loading model [cyan]{args.model}[/cyan]...")
     model, tokenizer = load_model(args.model)
+    console.print()
 
-    console.print("Extracting structured entities...\n")
     try:
-        result = extract(text, model, tokenizer)
+        if args.strategy == "chunked":
+            cmd_chunked(text, model, tokenizer)
+        else:
+            cmd_truncate(text, model, tokenizer)
     except ExtractionError as e:
         err_console.print(f"[bold red]Extraction failed:[/bold red] {e}")
         sys.exit(1)
-
-    display(result, truncated=truncated, original_length=original_length)
 
 
 if __name__ == "__main__":
