@@ -112,7 +112,9 @@ Chunk boundaries snap to the nearest paragraph break (`\n\n`) within a tolerance
 
 **Small models may hallucinate** — a 4B 4-bit model has limited instruction-following reliability, particularly in the merge pass where it must reason about identity across multiple partial results. Larger models (12B, 27B) from `mlx-community` will produce more accurate extractions and deduplication. Schema errors are caught by Pydantic; factual errors are not.
 
-**Chunked strategy is slower** — each chunk requires a separate model call, plus one more for the merge. A 20,000-char document with 4,000-char chunks produces ~6 extraction calls + 1 merge call.
+**Chunked strategy is slower** — extraction and merging happen sequentially: extract chunk 1, merge with chunk 2, merge with chunk 3, and so on. An N-chunk document requires N extractions and N-1 merge calls.
+
+**Context window and the merge pass** — merging all N partials in one model call was the original V2 design, but it fails on longer documents. When 7 or more chunks each produce 10–20 extracted entities, the combined JSON sent to the merge prompt can exceed the model's context window (~8,192 tokens for Gemma 3 4B). The model returns an empty string when its input exceeds this limit, causing an "Invalid JSON" parse failure. The fix is pairwise sequential merging: each merge call sees exactly 2 inputs (the accumulated result so far + the next chunk's partial), keeping input size bounded regardless of document length.
 
 ## Tests
 

@@ -85,8 +85,7 @@ class TestCmdTruncate:
 class TestCmdChunked:
     def test_calls_extract_per_chunk(self):
         model, tokenizer = MagicMock(), MagicMock()
-        # Use a text long enough to produce multiple chunks
-        text = ("word " * 200 + "\n\n") * 10  # ~14000 chars
+        text = ("word " * 200 + "\n\n") * 10  # ~14000 chars — produces multiple chunks
         with (
             patch("main.extract", return_value=SAMPLE_RESULT) as mock_extract,
             patch("main.merge", return_value=SAMPLE_RESULT),
@@ -94,7 +93,19 @@ class TestCmdChunked:
             main.cmd_chunked(text, model, tokenizer)
         assert mock_extract.call_count > 1
 
-    def test_single_chunk_skips_merge(self):
+    def test_merge_called_once_per_additional_chunk(self):
+        model, tokenizer = MagicMock(), MagicMock()
+        text = ("word " * 200 + "\n\n") * 10  # multiple chunks
+        with (
+            patch("main.extract", return_value=SAMPLE_RESULT),
+            patch("main.chunk_document", return_value=["chunk1", "chunk2", "chunk3"]),
+            patch("main.merge", return_value=SAMPLE_RESULT) as mock_merge,
+        ):
+            main.cmd_chunked(text, model, tokenizer)
+        # 3 chunks → 2 merge calls (sequential pairwise)
+        assert mock_merge.call_count == 2
+
+    def test_single_chunk_no_merge(self):
         model, tokenizer = MagicMock(), MagicMock()
         short_text = "Short document."
         with (
@@ -102,8 +113,7 @@ class TestCmdChunked:
             patch("main.merge", return_value=SAMPLE_RESULT) as mock_merge,
         ):
             main.cmd_chunked(short_text, model, tokenizer)
-        # merge is called but returns single partial directly (no model call)
-        mock_merge.assert_called_once()
+        mock_merge.assert_not_called()
 
 
 class TestMain:

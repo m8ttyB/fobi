@@ -136,20 +136,25 @@ def cmd_truncate(text: str, model, tokenizer) -> ExtractedDocument:
 
 
 def cmd_chunked(text: str, model, tokenizer) -> ExtractedDocument:
-    """V2: split into overlapping chunks, extract from each, then merge."""
+    """V2: split into overlapping chunks, extract from each, then merge sequentially.
+
+    Merges pairwise (accumulated result + next chunk) rather than all at once.
+    This keeps every merge call to exactly two inputs, preventing context window
+    overflow when many chunks produce large partial extraction lists.
+    """
     chunks = chunk_document(text)
     n = len(chunks)
     console.print(f"Document split into [cyan]{n}[/cyan] chunk{'s' if n != 1 else ''}.\n")
 
-    partials = []
-    for i, chunk in enumerate(chunks, 1):
+    console.print(f"Extracting chunk [cyan]1/{n}[/cyan]...")
+    result = extract(chunks[0], model, tokenizer)
+
+    for i, chunk in enumerate(chunks[1:], 2):
         console.print(f"Extracting chunk [cyan]{i}/{n}[/cyan]...")
         partial = extract(chunk, model, tokenizer)
-        partials.append(partial)
+        console.print(f"  Merging chunk {i}/{n}...")
+        result = merge([result, partial], model, tokenizer)
 
-    if n > 1:
-        console.print("\nMerging and deduplicating...\n")
-    result = merge(partials, model, tokenizer)
     display(result, strategy="chunked", chunk_count=n)
     return result
 
