@@ -74,7 +74,7 @@ def merge(
                 ),
             })
 
-        raw_response = generate(model, tokenizer, messages)
+        raw_response = generate(model, tokenizer, messages, max_tokens=4096)
         cleaned = _strip_fences(raw_response)
 
         try:

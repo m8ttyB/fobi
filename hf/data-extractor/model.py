@@ -6,11 +6,11 @@ def load_model(path: str):
     return load(path)
 
 
-def generate(model, tokenizer, messages: list[dict]) -> str:
+def generate(model, tokenizer, messages: list[dict], max_tokens: int = 2048) -> str:
     """Generate a complete response string for the given messages list."""
     prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True,
     )
-    return mlx_generate(model, tokenizer, prompt=prompt, max_tokens=2048, verbose=False)
+    return mlx_generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False)

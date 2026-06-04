@@ -64,7 +64,7 @@ class TestMergeSuccess:
         p2 = _doc(people=[Person(name="Albert Einstein", role="theoretical physicist")])
         captured = []
 
-        def fake_generate(model, tokenizer, messages):
+        def fake_generate(model, tokenizer, messages, **kwargs):
             captured.append(messages)
             return MERGED_JSON
 
@@ -103,7 +103,7 @@ class TestMergeRetry:
     def test_retry_appends_error_to_messages(self):
         captured = []
 
-        def fake_generate(model, tokenizer, messages):
+        def fake_generate(model, tokenizer, messages, **kwargs):
             captured.append(list(messages))
             if len(captured) == 1:
                 return "not json"
