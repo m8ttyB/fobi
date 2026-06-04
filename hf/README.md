@@ -27,4 +27,11 @@ Each project has its own `CLAUDE.md` with setup instructions, commands, and arch
 
 ## Model
 
-All projects default to `mlx-community/gemma-3-4b-it-4bit` (~2.5 GB). Override per-project via an environment variable (see each project's `CLAUDE.md`). Any text-only model from `mlx-community` on HuggingFace should work — avoid vision/multimodal models, which require `mlx-vlm` instead of `mlx-lm`.
+Projects default to the model listed in each project's `CLAUDE.md`. Override per-project via an environment variable. Any text-only model from `mlx-community` on HuggingFace should work — avoid vision/multimodal models, which require `mlx-vlm` instead of `mlx-lm`.
+
+| Project | Default model | Approx size |
+|---|---|---|
+| `cli-chat/` | `mlx-community/gemma-3-4b-it-4bit` | ~2.5 GB |
+| `writing-assistant/` | `mlx-community/gemma-3-4b-it-4bit` | ~2.5 GB |
+| `doc-qa/` | `mlx-community/gemma-3-4b-it-4bit` | ~2.5 GB |
+| `data-extractor/` | `mlx-community/gemma-4-12B-4bit` | ~7 GB |

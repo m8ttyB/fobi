@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make install
-export EXTRACTOR_MODEL_PATH="mlx-community/gemma-3-4b-it-4bit"  # downloads ~2.5 GB on first run
+export EXTRACTOR_MODEL_PATH="mlx-community/gemma-4-12B-4bit"  # downloads ~7 GB on first run
 ```
 
 ## Running
