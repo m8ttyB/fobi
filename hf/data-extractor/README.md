@@ -58,10 +58,10 @@ python main.py FILE [--model MODEL_PATH] [--strategy {truncate,chunked}]
 | Variable | Default | Description |
 |---|---|---|
 | `EXTRACTOR_MODEL_PATH` | `mlx-community/gemma-4-12B-4bit` | HuggingFace repo ID or local MLX model directory |
-| `EXTRACTOR_MAX_CHARS` | `20000` | Maximum characters for truncate strategy |
+| `EXTRACTOR_MAX_CHARS` | `100000` | Maximum characters for truncate strategy |
 | `EXTRACTOR_MAX_RETRIES` | `3` | Number of extraction attempts before giving up |
-| `EXTRACTOR_CHUNK_CHARS` | `4000` | Target chunk size for chunked strategy |
-| `EXTRACTOR_OVERLAP_CHARS` | `400` | Overlap between consecutive chunks |
+| `EXTRACTOR_CHUNK_CHARS` | `16000` | Target chunk size for chunked strategy |
+| `EXTRACTOR_OVERLAP_CHARS` | `800` | Overlap between consecutive chunks |
 
 ## Output schema
 

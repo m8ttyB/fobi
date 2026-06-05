@@ -85,7 +85,7 @@ class TestCmdTruncate:
 class TestCmdChunked:
     def test_calls_extract_per_chunk(self):
         model, tokenizer = MagicMock(), MagicMock()
-        text = ("word " * 200 + "\n\n") * 10  # ~14000 chars — produces multiple chunks
+        text = ("word " * 200 + "\n\n") * 40  # ~56000 chars — produces multiple chunks
         with (
             patch("main.extract", return_value=SAMPLE_RESULT) as mock_extract,
             patch("main.merge", return_value=SAMPLE_RESULT),

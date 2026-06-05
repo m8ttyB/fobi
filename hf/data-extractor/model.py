@@ -6,7 +6,7 @@ def load_model(path: str):
     return load(path)
 
 
-def generate(model, tokenizer, messages: list[dict], max_tokens: int = 2048) -> str:
+def generate(model, tokenizer, messages: list[dict], max_tokens: int = 4096) -> str:
     """Generate a complete response string for the given messages list."""
     prompt = tokenizer.apply_chat_template(
         messages,
