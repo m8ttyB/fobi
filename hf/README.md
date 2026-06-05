@@ -34,4 +34,4 @@ Projects default to the model listed in each project's `CLAUDE.md`. Override per
 | `cli-chat/` | `mlx-community/gemma-3-4b-it-4bit` | ~2.5 GB |
 | `writing-assistant/` | `mlx-community/gemma-3-4b-it-4bit` | ~2.5 GB |
 | `doc-qa/` | `mlx-community/gemma-3-4b-it-4bit` | ~2.5 GB |
-| `data-extractor/` | `mlx-community/gemma-4-12B-4bit` | ~7 GB |
+| `data-extractor/` | `mlx-community/gemma-3-12b-it-4bit` | ~7 GB |

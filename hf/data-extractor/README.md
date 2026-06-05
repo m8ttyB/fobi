@@ -57,7 +57,7 @@ python main.py FILE [--model MODEL_PATH] [--strategy {truncate,chunked}]
 
 | Variable | Default | Description |
 |---|---|---|
-| `EXTRACTOR_MODEL_PATH` | `mlx-community/gemma-4-12B-4bit` | HuggingFace repo ID or local MLX model directory |
+| `EXTRACTOR_MODEL_PATH` | `mlx-community/gemma-3-12b-it-4bit` | HuggingFace repo ID or local MLX model directory |
 | `EXTRACTOR_MAX_CHARS` | `100000` | Maximum characters for truncate strategy |
 | `EXTRACTOR_MAX_RETRIES` | `3` | Number of extraction attempts before giving up |
 | `EXTRACTOR_CHUNK_CHARS` | `16000` | Target chunk size for chunked strategy |
@@ -128,4 +128,4 @@ make test
 
 `mlx-lm` loads **text-only** models. Vision-language models require `mlx-vlm`. Use a text-only model from `mlx-community` on HuggingFace.
 
-Tested and working: `mlx-community/gemma-4-12B-4bit`
+Tested and working: `mlx-community/gemma-3-12b-it-4bit`
