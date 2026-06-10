@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: ${{ matrix.project }} tests
+    # mlx-lm requires Apple Silicon — Linux runners cannot install the mlx wheel.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - cli-chat
+          - doc-qa
+          - writing-assistant
+          - data-extractor
+
+    defaults:
+      run:
+        working-directory: hf/${{ matrix.project }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hf/${{ matrix.project }}/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Run ruff (if configured)
+        run: |
+          if pip show ruff > /dev/null 2>&1; then
+            ruff check .
+          else
+            echo "ruff not in requirements — skipping lint"
+          fi
